@@ -1,4 +1,4 @@
-﻿
+
 using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types; 
@@ -78,11 +78,8 @@ class Program
     {
         using var connection = new SQLiteConnection($"Data Source={dbFilePath}");
         connection.Open();
-
         using var command = new SQLiteCommand("SELECT * FROM Raffle", connection);
         using var reader = command.ExecuteReader();
-
-        raffles.Clear();
         while (reader.Read())
         {
             raffles.Add(new Raffle
@@ -92,15 +89,25 @@ class Program
                 ScheduledTime = !reader.IsDBNull(2) ? TimeSpan.Parse(reader.GetString(2)) : null,
                 RaffleTime = !reader.IsDBNull(3) ? DateTime.Parse(reader.GetString(3)) : null,
                 Winner = !reader.IsDBNull(4) ? reader.GetString(4) : null,
-                Participants = !reader.IsDBNull(5) ? reader.GetString(5).Split(',').ToList() : new List<string>(),
-                ImageURL = !reader.IsDBNull(6) ? reader.GetString(6) : null
+                Participants = !reader.IsDBNull(5) ? reader.GetString(5).Split(',').ToList() : new List<string>()
             });
         }
-
-
+        reader.Close();
+        command.CommandText = "SELECT * FROM RaffleHistory";
+        using var historyReader = command.ExecuteReader();
+        while (historyReader.Read())
+        {
+            raffleHistory.Add(new Raffle
+            {
+                Id = historyReader.GetInt32(0),
+                Name = historyReader.GetString(1),
+                ScheduledTime = !historyReader.IsDBNull(2) ? TimeSpan.Parse(historyReader.GetString(2)) : null,
+                RaffleTime = !historyReader.IsDBNull(3) ? DateTime.Parse(historyReader.GetString(3)) : null,
+                Winner = !historyReader.IsDBNull(4) ? historyReader.GetString(4) : null,
+                Participants = !historyReader.IsDBNull(5) ? historyReader.GetString(5).Split(',').ToList() : new List<string>()
+            });
+        }
     }
-
-
     private static void CheckRaffles(object? state)
     {
         List<Raffle> completedRaffles = new List<Raffle>();
