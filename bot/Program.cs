@@ -1,7 +1,7 @@
 
 using Telegram.Bot;
 using Telegram.Bot.Polling;
-using Telegram.Bot.Types; 
+using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 using System.Data.SQLite;
@@ -10,12 +10,12 @@ class Program
 {
     private static ITelegramBotClient? client;
     private static ReceiverOptions? receiverOptions;
-    private static string token = "7006475150:AAF2_c7cH8qVUTguc-dsMv8OVJUqxNLsL4M"; 
-    private static string dbFilePath = "raffles.db"; 
+    private static string token = "7006475150:AAF2_c7cH8qVUTguc-dsMv8OVJUqxNLsL4M";
+    private static string dbFilePath = "raffles.db";
     private static List<Raffle> raffles = new List<Raffle>();
     private static List<Raffle> raffleHistory = new List<Raffle>();
     private static Timer raffleTimer;
-    private static TimeSpan checkInterval = TimeSpan.FromMinutes(0.1); 
+    private static TimeSpan checkInterval = TimeSpan.FromMinutes(0.1);
 
     public static void Main(string[] args)
     {
@@ -93,6 +93,8 @@ class Program
             });
         }
         reader.Close();
+
+        // Загрузка истории розыгрышей
         command.CommandText = "SELECT * FROM RaffleHistory";
         using var historyReader = command.ExecuteReader();
         while (historyReader.Read())
@@ -429,49 +431,53 @@ class Program
                             SaveRaffles();
                             await client.AnswerCallbackQueryAsync(callbackQuery.Id, "Вы успешно участвуете в розыгрыше!");
 
-                            if (raffle.ScheduledTime <= DateTime.Now.TimeOfDay)
+                            string messageText = $"Розыгрыш: {raffle.Name}\nКоличество участников: {raffle.Participants.Count}";
+                            var keyboard = RaffleActionButtons(raffleName);
+
+                            if (!string.IsNullOrEmpty(raffle.ImageURL))
                             {
-                                await client.EditMessageTextAsync(callbackQuery.Message.Chat.Id, callbackQuery.Message.MessageId,
-                                    $"Розыгрыш: {raffle.Name}\nКоличество участников: {raffle.Participants.Count}",
-                                    replyMarkup: RaffleActionButtons(raffleName));
+                                try
+                                {
+                                    InputFileUrl photo = new InputFileUrl(raffle.ImageURL);
+                                    await client.SendPhotoAsync(callbackQuery.Message.Chat.Id, photo, caption: messageText, replyMarkup: keyboard);
+                                    await client.DeleteMessageAsync(callbackQuery.Message.Chat.Id, callbackQuery.Message.MessageId);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Ошибка при отправке изображения: {ex.Message}");
+                                    await client.SendTextMessageAsync(callbackQuery.Message.Chat.Id, messageText, replyMarkup: keyboard);
+                                }
                             }
                             else
                             {
-                                await client.EditMessageTextAsync(callbackQuery.Message.Chat.Id, callbackQuery.Message.MessageId,
-                                    $"Розыгрыш: {raffle.Name}\nКоличество участников: {raffle.Participants.Count}",
-                                    replyMarkup: RaffleActionButtons(raffleName));
+                                await client.SendTextMessageAsync(callbackQuery.Message.Chat.Id, messageText, replyMarkup: keyboard);
                             }
                         }
-                        else
+                        else if (action == "withdraw")
                         {
-                            await client.AnswerCallbackQueryAsync(callbackQuery.Id, "Вы уже участвуете в этом розыгрыше.");
+                            if (raffle.ParticipantIds.Contains(participantId))
+                            {
+                                RemoveRaffleParticipant(raffle, participantId);
+                                SaveRaffles();
+                                await client.AnswerCallbackQueryAsync(callbackQuery.Id, "Вы покинули розыгрыш.");
+                            }
+                            else
+                            {
+                                await client.AnswerCallbackQueryAsync(callbackQuery.Id, "Вы не участвуете в этом розыгрыше.");
+                            }
+
                         }
                     }
-                    else if (action == "withdraw")
+                    else
                     {
-                        if (raffle.ParticipantIds.Contains(participantId))
-                        {
-                            RemoveRaffleParticipant(raffle, participantId);
-                            SaveRaffles();
-                            await client.AnswerCallbackQueryAsync(callbackQuery.Id, "Вы покинули розыгрыш.");
-                        }
-                        else
-                        {
-                            await client.AnswerCallbackQueryAsync(callbackQuery.Id, "Вы не участвуете в этом розыгрыше.");
-                        }
-
+                        await client.AnswerCallbackQueryAsync(callbackQuery.Id, "Розыгрыш уже завершён или не найден.");
+                        await client.DeleteMessageAsync(callbackQuery.Message.Chat.Id, callbackQuery.Message.MessageId);
                     }
-                }
-                else
-                {
-                    await client.AnswerCallbackQueryAsync(callbackQuery.Id, "Розыгрыш уже завершён или не найден.");
-                    await client.DeleteMessageAsync(callbackQuery.Message.Chat.Id, callbackQuery.Message.MessageId);
-                }
 
+                }
             }
         }
     }
-
     private static async Task ShowRaffleHistory(ITelegramBotClient client, long chatId)
     {
         if (!raffleHistory.Any())
@@ -691,7 +697,7 @@ class Program
                     Console.WriteLine($"Ошибка отправки сообщения участнику {participantId}: {ex.Message}");
                 }
             }
-            raffle.Winner = winnerName; 
+            raffle.Winner = winnerName;
         }
         else
         {
